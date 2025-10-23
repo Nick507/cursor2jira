@@ -37,7 +37,7 @@ A Python script that converts formatted text from Cursor AI IDE to Jira markup f
 
 ### How It Works
 The script:
-1. Reads HTML data from your clipboard (format 49356)
+1. Reads HTML data from your clipboard (dynamically detects HTML format)
 2. Extracts markdown content from `data-markdown-raw` attributes
 3. Converts markdown to Jira Wiki Markup syntax
 4. Copies the result back to your clipboard
