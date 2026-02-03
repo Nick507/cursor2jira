@@ -43,7 +43,8 @@ class CursorToJiraConverter:
         
         # Common formatting patterns from Cursor AI
         self.patterns = {
-            # Headers (exclude single # which is handled as ordered list)
+            # Headers
+            'h1': (r'^# (.+)$', r'h1. \1'),
             'h2': (r'^## (.+)$', r'h2. \1'),
             'h3': (r'^### (.+)$', r'h3. \1'),
             'h4': (r'^#### (.+)$', r'h4. \1'),
@@ -450,6 +451,7 @@ class CursorToJiraConverter:
         # Replace list placeholders with actual Jira syntax
         final_result = '\n'.join(converted_lines)
         final_result = final_result.replace('<<<JIRALIST2>>>', '** ')
+        final_result = final_result.replace('__JIRA_OL__', '#')
         
         return final_result
     
@@ -472,29 +474,25 @@ class CursorToJiraConverter:
             line = lines[i]
             stripped = line.strip()
             
-            # Check if this is an ordered list item (numbered or # format)
-            if (stripped.startswith('#') and not stripped.startswith('##')) or re.match(r'^\d+\.\s+', stripped):
-                # This is an ordered list item
-                if stripped.startswith('#'):
-                    # # format
-                    content = stripped[1:].strip()
-                    converted_lines.append(f"# {content}")
-                else:
-                    # numbered format (1., 2., etc.)
-                    content = re.sub(r'^\d+\.\s+', '', stripped)
-                    converted_lines.append(f"# {content}")
+            # Check if this is an ordered list item (numbered format only, NOT single # which is h1 header)
+            if re.match(r'^\d+\.\s+', stripped):
+                # This is an ordered list item in numbered format (1., 2., etc.)
+                # Use placeholder to prevent h1 pattern from matching this later
+                content = re.sub(r'^\d+\.\s+', '', stripped)
+                converted_lines.append(f"__JIRA_OL__ {content}")
                 
                 # Look ahead for unordered sub-items (indented with -, *, or +)
                 j = i + 1
-                found_hr_after_list = False
+                found_separator_after_list = False
                 while j < len(lines):
                     next_line = lines[j]
                     next_stripped = next_line.strip()
                     
-                    # Check for horizontal rule (---) after list
-                    if next_stripped == '---':
-                        # Mark that we found a horizontal rule and should add empty line before it
-                        found_hr_after_list = True
+                    # Check for horizontal rule (---) or header after list
+                    # These need an empty line before them in Jira
+                    if next_stripped == '---' or next_stripped.startswith('##'):
+                        # Mark that we found a separator and should add empty line before it
+                        found_separator_after_list = True
                         break
                     
                     # Check if next line is an unordered list item (indented or not)
@@ -518,7 +516,7 @@ class CursorToJiraConverter:
                         else:
                             converted_lines.append(f"#* {sub_content}")
                         j += 1
-                    elif (next_stripped.startswith('#') and not next_stripped.startswith('##')) or re.match(r'^\d+\.\s+', next_stripped):
+                    elif re.match(r'^\d+\.\s+', next_stripped):
                         # Next ordered list item - break to handle it in next iteration
                         break
                     elif next_stripped == '':
@@ -528,8 +526,8 @@ class CursorToJiraConverter:
                         # Non-list content - break
                         break
                 
-                # Add empty line before horizontal rule if found
-                if found_hr_after_list:
+                # Add empty line before horizontal rule or header if found
+                if found_separator_after_list:
                     converted_lines.append('')
                 
                 i = j
@@ -623,6 +621,15 @@ class CursorToJiraConverter:
             if pattern_name in ['code_block', 'code_block_no_lang', 'table_header', 'table_row']:
                 continue  # These are handled separately or above
             
+            # Skip header patterns if line is already a Jira list item
+            if pattern_name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                # Check if line starts with Jira list markers (excluding # which could be h1)
+                stripped = converted.strip()
+                if (stripped.startswith('* ') or stripped.startswith('** ') or 
+                    stripped.startswith('#* ') or stripped.startswith('#** ') or
+                    stripped.startswith('__JIRA_OL__')):
+                    continue  # Skip header conversion for list items
+            
             if callable(replacement):
                 converted = re.sub(pattern, replacement, converted, flags=re.MULTILINE)
             else:
@@ -710,17 +717,23 @@ def get_clipboard_html():
     finally:
         win32clipboard.CloseClipboard()
 
+def get_clipboard_markdown():
+    """Get markdown data from clipboard"""
+    win32clipboard.OpenClipboard()
+    try:
+        data = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+        return data
+    finally:
+        win32clipboard.CloseClipboard()
+
 def main():
     import sys
     
-    # Check for debug flag
-    if len(sys.argv) > 1 and sys.argv[1] == '--debug':
-        print("[DEBUG] Debug mode enabled")
-        debug_clipboard_formats()
-        print()
+    #debug_clipboard_formats()
     
     # Get data from clipboard (HTML or plain text)
-    decoded_data = get_clipboard_html()
+    #decoded_data = get_clipboard_html()
+    decoded_data = get_clipboard_markdown()
 
     print("=============================== Clipboard Data ================================")
     print(decoded_data)

@@ -46,7 +46,8 @@ def test_basic_formatting():
     
     # Test headers
     test_cases = [
-        ("## Header 2", "h2. Header 2", "Header conversion"),
+        ("# Header 1", "h1. Header 1", "Header 1 conversion"),
+        ("## Header 2", "h2. Header 2", "Header 2 conversion"),
         ("### Header 3", "h3. Header 3", "Header 3 conversion"),
         ("**bold text**", "*bold text*", "Bold text"),
         ("*italic text*", "_italic text_", "Italic text"),
@@ -87,15 +88,62 @@ def test_simple_lists():
     actual = converter.convert_text(input_text)
     result.add_test("Ordered list (numbered)", actual == expected, expected, actual)
     
-    # Ordered list (# format)
-    input_text = """# first item
-# second item
-# third item"""
-    expected = """# first item
-# second item
-# third item"""
+    return result
+
+
+def test_h1_vs_numbered_list():
+    """Test that h1 headers and numbered lists are properly distinguished"""
+    result = TestResult("H1 Header vs Numbered List Tests")
+    converter = CursorToJiraConverter()
+    
+    # H1 header should convert to h1.
+    input_text = "# Mid-Air Collision Retry Implementation Summary"
+    expected = "h1. Mid-Air Collision Retry Implementation Summary"
     actual = converter.convert_text(input_text)
-    result.add_test("Ordered list (# format)", actual == expected, expected, actual)
+    result.add_test("H1 header conversion", actual == expected, expected, actual)
+    
+    # Numbered list should convert to Jira ordered list #
+    input_text = """1. **Channels:** All message channels are released and cleared
+2. **Counters:** All request/response counters reset to 0
+3. **Collections:** Failed hosts list cleared, channels map/list cleared"""
+    expected = """# *Channels:* All message channels are released and cleared
+# *Counters:* All request/response counters reset to 0
+# *Collections:* Failed hosts list cleared, channels map/list cleared"""
+    actual = converter.convert_text(input_text)
+    result.add_test("Numbered list with bold items", actual == expected, expected, actual)
+    
+    # Mixed: h1 header followed by numbered list
+    input_text = """# State Reset During Retry
+
+When `resetStateForRetry()` is called:
+
+1. **Channels:** All message channels are released and cleared
+2. **Counters:** All request/response counters reset to 0"""
+    expected = """h1. State Reset During Retry
+
+When {{resetStateForRetry()}} is called:
+
+# *Channels:* All message channels are released and cleared
+# *Counters:* All request/response counters reset to 0"""
+    actual = converter.convert_text(input_text)
+    result.add_test("H1 header followed by numbered list", actual == expected, expected, actual)
+    
+    # Test unordered list with inline code containing ::
+    input_text = "- Calls parent `ToFileAggregatorDFTaskWorker::resetForRetry()`"
+    expected = "* Calls parent {{ToFileAggregatorDFTaskWorker::resetForRetry()}}"
+    actual = converter.convert_text(input_text)
+    result.add_test("Unordered list with inline code containing ::", actual == expected, expected, actual)
+    
+    # Test numbered list followed by header (should have blank line)
+    input_text = """1. **Channels:** All message channels are released and cleared
+2. **Counters:** All request/response counters reset to 0
+## Configuration"""
+    expected = """# *Channels:* All message channels are released and cleared
+# *Counters:* All request/response counters reset to 0
+
+h2. Configuration"""
+    actual = converter.convert_text(input_text)
+    result.add_test("Numbered list followed by header (blank line added)", actual == expected, expected, actual)
     
     return result
 
@@ -121,11 +169,11 @@ def test_nested_lists_basic():
     actual = converter.convert_text(input_text)
     result.add_test("Numbered list with indented dashes", actual == expected, expected, actual)
     
-    # Hash format list with asterisk sub-items
-    input_text = """# First item
+    # Numbered list with asterisk sub-items (no indentation)
+    input_text = """1. First item
 * sub item 1.1
 * sub item 1.2
-# Second item
+2. Second item
 * sub item 2.1"""
     
     expected = """# First item
@@ -135,7 +183,7 @@ def test_nested_lists_basic():
 #* sub item 2.1"""
     
     actual = converter.convert_text(input_text)
-    result.add_test("Hash list with asterisk sub-items", actual == expected, expected, actual)
+    result.add_test("Numbered list with asterisk sub-items", actual == expected, expected, actual)
     
     return result
 
@@ -332,15 +380,16 @@ def test_edge_cases():
     
     # Test case 4: Headers should not be treated as lists
     input_text = """## This is a header
-# This is an ordered list item
+1. This is an ordered list item
 ### Another header"""
     
+    expected = """h2. This is a header
+# This is an ordered list item
+
+h3. Another header"""
+    
     actual = converter.convert_text(input_text)
-    has_h2 = 'h2.' in actual
-    has_h3 = 'h3.' in actual
-    has_list = actual.count('# This is an ordered list item') == 1
-    result.add_test("Headers vs ordered lists distinction", has_h2 and has_h3 and has_list, 
-                   "Should have h2, h3, and one # list item", actual)
+    result.add_test("Headers vs ordered lists distinction", actual == expected, expected, actual)
     
     return result
 
@@ -571,6 +620,7 @@ def main():
     test_functions = [
         test_basic_formatting,
         test_simple_lists,
+        test_h1_vs_numbered_list,
         test_nested_lists_basic,
         test_nested_lists_with_empty_lines,
         test_nested_lists_with_bold,
